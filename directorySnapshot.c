@@ -50,7 +50,7 @@ void monitor_directory(const char *path) {
 }
 
 // Update the snapshot file for a directory
-void update_snapshot(const char *path, const char *output_dir) {
+void update_snapshot(const char *path, const char *output_dir, const char *isolated_space_dir) {
     // Open the directory
     DIR *pDir = opendir(path);
     if (pDir == NULL) {
@@ -76,6 +76,22 @@ void update_snapshot(const char *path, const char *output_dir) {
         // Get metadata for the entry
         struct stat file_stat;
         if (stat(file_path, &file_stat) == 0) {
+            // Check if the file has all permissions missing
+            if ((file_stat.st_mode & 0777) == 0) {
+                // Create a new process to perform a syntactic analysis
+                pid_t pid = fork();
+                if (pid == 0) {
+                    // Child process
+                    execlp("bash", "bash", "verify_for_malicious.sh", file_path, (char *)NULL);
+                    perror("Error executing script");
+                    exit(EXIT_FAILURE);
+                } else if (pid < 0) {
+                    // Error forking
+                    perror("Error forking");
+                    exit(EXIT_FAILURE);
+                }
+            }
+
             // Read each line in the snapshot file
             char line[100];
             char *name;
@@ -108,22 +124,41 @@ void update_snapshot(const char *path, const char *output_dir) {
 
 // Main function
 int main(int argc, char *argv[]) {
-    if (argc < 2 || argc > MAX_DIRS + 1) {
+    if (argc < 4 || argc % 2!= 0) {
         perror("Invalid number of arguments");
         exit(EXIT_FAILURE);
     }
 
     // Get the output directory
     char output_dir[PATH_MAX];
-    snprintf(output_dir, PATH_MAX, "%s", argv[1]);
+    snprintf(output_dir, PATH_MAX, "%s", argv[2]);
+
+    // Get the isolated space directory
+    char isolated_space_dir[PATH_MAX];
+    int i;
+    for (i = 4; i < argc; i += 2) {
+        if (strcmp(argv[i - 1], "-s") == 0) {
+            snprintf(isolated_space_dir, PATH_MAX, "%s", argv[i]);
+            break;
+        }
+    }
+
+    if (i == argc) {
+        perror("Isolated space directory not provided");
+        exit(EXIT_FAILURE);
+    }
 
     // Monitor and update the snapshot file for each directory
-    for (int i = 2; i < argc; i++) {
+    for (int j = 4; j < argc; j += 2) {
+        if (strcmp(argv[j - 1], "-s") == 0) {
+            continue;
+        }
+
         pid_t pid = fork();
         if (pid == 0) {
             // Child process
-            monitor_directory(argv[i]);
-            update_snapshot(argv[i], output_dir);
+            monitor_directory(argv[j]);
+            update_snapshot(argv[j], output_dir, isolated_space_dir);
             exit(0);
         } else if (pid < 0) {
             // Error forking
