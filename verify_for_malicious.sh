@@ -1,5 +1,20 @@
 #!/bin/bash
 
+if grep -axv '.*' "$1" >/dev/null 2>&1; then
+  echo "File $1 contains non-ASCII characters"
+fi
+
+# Check if the file contains key words associated with dangerous files
+KEY_WORDS=("corrupted" "dangerous" "risk" "attack" "malware" "malicious")
+for WORD in "${KEY_WORDS[@]}"; do
+  if grep -q "$WORD" "$1"; then
+    echo "File $1 contains the key word $WORD"
+  fi
+done
+# Check if the file has fewer than 3 lines and the number of words exceeds 1000, and the number of characters exceeds 2000
+if [ $(wc -l < "$1") -lt 3 ] && [ $(wc -w < "$1") -gt 1000 ] && [ $(wc -m < "$1") -gt 2000 ]; then
+  echo "File $1 is suspicious"
+fi
 FILE_PATH="$1"
 ISOLATED_SPACE_DIR="$2"
 
